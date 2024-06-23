@@ -131,6 +131,8 @@ class PointSegMSeg3DHead(nn.Module):
         self.cross_entropy_func = nn.CrossEntropyLoss(ignore_index=self.ignored_label)
         self.lovasz_softmax_func = lovasz_softmax
         self.mimic_loss_func = nn.MSELoss() 
+
+        self.cosine_similarity = nn.CosineEmbeddingLoss()
         self.tasks = ["out"]
 
 
@@ -208,6 +210,10 @@ class PointSegMSeg3DHead(nn.Module):
         point_loss += out_mimic_loss
         point_loss_dict["out_mimic_loss"] = out_mimic_loss.detach()
 
+        loss_cma = self.forward_ret_dict['loss_cma']
+        point_loss += loss_cma
+        point_loss_dict['loss_cma'] = loss_cma.detach()
+        
         # mimic loss for feature completion range
         # point_features_prange = self.forward_ret_dict["point_features_prange"]
         # point_features_range = self.forward_ret_dict["point_features_range"]
@@ -327,6 +333,12 @@ class PointSegMSeg3DHead(nn.Module):
 
         #print('point_features_camera before shape: ', point_features_camera.size())
 
+        if return_loss:
+            self.forward_ret_dict.update({
+                "loss_cma": self.cosine_similarity(point_features_lidar,
+                                                   point_features_camera,
+                                                   torch.ones(point_features_lidar.shape)),
+            })
 
         # cross-modal feature completion
         # predict the pseudo camera features
