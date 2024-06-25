@@ -130,7 +130,7 @@ class PointSegMSeg3DHead(nn.Module):
         self.ignored_label = model_cfg["IGNORED_LABEL"]
         self.cross_entropy_func = nn.CrossEntropyLoss(ignore_index=self.ignored_label)
         self.lovasz_softmax_func = lovasz_softmax
-        self.mimic_loss_func = nn.MSELoss() 
+        # self.mimic_loss_func = nn.MSELoss() 
         self.tasks = ["out"]
 
 

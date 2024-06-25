@@ -23,7 +23,7 @@ im_height, img_width = 360, 1280
 
 
 hrnet_w48_cfg = dict(
-    pretrained='./work_dirs/pretrained_models/hrnetv2_w48-d2186c55.pth',
+    pretrained='../lidarseg3dRange/work_dirs/pretrained_models/hrnetv2_w48-d2186c55.pth',
     frozen_stages=3, 
     norm_eval=False, 
 )
