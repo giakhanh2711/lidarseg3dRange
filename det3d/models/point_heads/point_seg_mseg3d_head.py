@@ -89,13 +89,13 @@ class PointSegMSeg3DHead(nn.Module):
 
 
 
-        # cross-modal feature completion
-        self.lidar_camera_mimic_layer = self.make_convcls_head(
-            fc_cfg=model_cfg["MIMIC_FC"],
-            input_channels=voxel_align_channels,
-            output_channels=image_align_channels,
-            dp_ratio=0,
-        )
+        # # cross-modal feature completion
+        # self.lidar_camera_mimic_layer = self.make_convcls_head(
+        #     fc_cfg=model_cfg["MIMIC_FC"],
+        #     input_channels=voxel_align_channels,
+        #     output_channels=image_align_channels,
+        #     dp_ratio=0,
+        # )
 
         # SF-Phase: semantic-based feature fusion phase
         SFPhase_CFG = model_cfg["SFPhase_CFG"]
@@ -196,17 +196,17 @@ class PointSegMSeg3DHead(nn.Module):
         point_loss_dict["out_ce_loss"] = out_ce_loss.detach()
         point_loss_dict["out_lovasz_loss"] = out_lvsz_loss.detach()
 
-        # pixel-to-point loss in MSeg3D
-        # mimic loss for feature completion camera
-        point_features_pcamera = self.forward_ret_dict["point_features_pcamera"]
-        point_features_camera = self.forward_ret_dict["point_features_camera"]
-        assert self.forward_ret_dict["point_features_camera"].requires_grad == False
-        out_mimic_loss = self.mimic_loss_func(
-            self.forward_ret_dict["point_features_pcamera"],
-            self.forward_ret_dict["point_features_camera"],
-        )
-        point_loss += out_mimic_loss
-        point_loss_dict["out_mimic_loss"] = out_mimic_loss.detach()
+        # # pixel-to-point loss in MSeg3D
+        # # mimic loss for feature completion camera
+        # point_features_pcamera = self.forward_ret_dict["point_features_pcamera"]
+        # point_features_camera = self.forward_ret_dict["point_features_camera"]
+        # assert self.forward_ret_dict["point_features_camera"].requires_grad == False
+        # out_mimic_loss = self.mimic_loss_func(
+        #     self.forward_ret_dict["point_features_pcamera"],
+        #     self.forward_ret_dict["point_features_camera"],
+        # )
+        # point_loss += out_mimic_loss
+        # point_loss_dict["out_mimic_loss"] = out_mimic_loss.detach()
 
         # mimic loss for feature completion range
         # point_features_prange = self.forward_ret_dict["point_features_prange"]
@@ -328,17 +328,17 @@ class PointSegMSeg3DHead(nn.Module):
         #print('point_features_camera before shape: ', point_features_camera.size())
 
 
-        # cross-modal feature completion
-        # predict the pseudo camera features
-        # point_features_pcamera.shape: [#points_inside, C_img]
-        point_features_pcamera = self.lidar_camera_mimic_layer(point_features_lidar[valid_mask])
-        assert point_features_camera.shape[0] == point_features_pcamera.shape[0]
-        if return_loss:
-            # NOTE: compute the feature completion loss on points inside only
-            self.forward_ret_dict.update({
-                "point_features_pcamera": point_features_pcamera,
-                "point_features_camera": point_features_camera.detach(),
-            })
+        # # cross-modal feature completion
+        # # predict the pseudo camera features
+        # # point_features_pcamera.shape: [#points_inside, C_img]
+        # point_features_pcamera = self.lidar_camera_mimic_layer(point_features_lidar[valid_mask])
+        # assert point_features_camera.shape[0] == point_features_pcamera.shape[0]
+        # if return_loss:
+        #     # NOTE: compute the feature completion loss on points inside only
+        #     self.forward_ret_dict.update({
+        #         "point_features_pcamera": point_features_pcamera,
+        #         "point_features_camera": point_features_camera.detach(),
+        #     })
         # prepare for feature completion
         point_features_camera_pad0 = torch.zeros(
             (valid_mask.shape[0], point_features_camera.shape[1]), 
@@ -351,26 +351,26 @@ class PointSegMSeg3DHead(nn.Module):
         # print('point features camera shape:', point_features_camera.size())
         # print('point feature camera_pad0 shape:', point_features_camera_pad0.size())
 
-        # print('point feature pcamera_pad0 shape before:', point_features_camera_pad0.size())
-        point_features_pcamera_pad0 = torch.zeros(
-            (valid_mask.shape[0], point_features_pcamera.shape[1]), 
-            dtype=point_features_pcamera.dtype, 
-            device=point_features_pcamera.device
-        )
+        # # print('point feature pcamera_pad0 shape before:', point_features_camera_pad0.size())
+        # point_features_pcamera_pad0 = torch.zeros(
+        #     (valid_mask.shape[0], point_features_pcamera.shape[1]), 
+        #     dtype=point_features_pcamera.dtype, 
+        #     device=point_features_pcamera.device
+        # )
 
-        # TODO: haven't understood yet KHANH
-        point_features_pcamera_pad0[valid_mask] = point_features_pcamera
-        # print('point features pcamera shape:', point_features_pcamera.size())
-        # print('point feature camera_pad0 shape after:', point_features_camera_pad0.size())
+        # # TODO: haven't understood yet KHANH
+        # point_features_pcamera_pad0[valid_mask] = point_features_pcamera
+        # # print('point features pcamera shape:', point_features_pcamera.size())
+        # # print('point feature camera_pad0 shape after:', point_features_camera_pad0.size())
 
-        # feature completion
-        assert point_features_camera_pad0.shape[0] == point_features_pcamera_pad0.shape[0]
-        # point-wise completed camera features
-        point_features_ccamera = torch.where(
-            valid_mask.unsqueeze(-1).expand_as(point_features_camera_pad0), 
-            point_features_camera_pad0, 
-            point_features_pcamera_pad0, 
-        )
+        # # feature completion
+        # assert point_features_camera_pad0.shape[0] == point_features_pcamera_pad0.shape[0]
+        # # point-wise completed camera features
+        # point_features_ccamera = torch.where(
+        #     valid_mask.unsqueeze(-1).expand_as(point_features_camera_pad0), 
+        #     point_features_camera_pad0, 
+        #     point_features_pcamera_pad0, 
+        # )
 
         #print('point features ccamera:', point_features_ccamera[:4])
 
@@ -389,7 +389,7 @@ class PointSegMSeg3DHead(nn.Module):
 
         # TODO: KHANH ADD concatenate 3 point-wise features
         # GFFM in GF-Phase
-        point_features_lc = torch.cat([point_features_lidar, point_features_ccamera, point_features_range], dim=1)
+        point_features_lc = torch.cat([point_features_lidar, point_features_camera_pad0, point_features_range], dim=1)
         point_features_geo_fused = self.gffm_lc(point_features_lc)
         # KHANH ADD
 
