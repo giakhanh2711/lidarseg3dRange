@@ -387,7 +387,7 @@ class Trainer(object):
             del losses
 
             outputs = dict(
-                loss=loss, log_vars=log_vars, num_samples=-1  # TODO: FIX THIS
+                loss=loss, log_vars=log_vars, num_samples=-1,   # TODO: FIX THIS
             )
             self.call_hook("after_parse_loss")
 
@@ -405,37 +405,50 @@ class Trainer(object):
 
         base_step = epoch * self.length
 
-        # prefetcher = Prefetcher(data_loader)
-        # for data_batch in BackgroundGenerator(data_loader, max_prefetch=3):
-        for i, data_batch in enumerate(data_loader):
-            global_step = base_step + i
-            if self.lr_scheduler is not None:
-                #print(global_step)
-                self.lr_scheduler.step(global_step)
+        tmp = global_step
+        tmp_iter = self._iter
+        for t in range(2):
+            if t == 0:
+                self.model.reset_model_point()
+            if t == 1:
+                global_step = tmp
+                self._iter = tmp_iter
+                self.model.calculate_image_features_total()
+                
+            # prefetcher = Prefetcher(data_loader)
+            # for data_batch in BackgroundGenerator(data_loader, max_prefetch=3):
+            for i, data_batch in enumerate(data_loader):
+                global_step = base_step + i
+                if self.lr_scheduler is not None:
+                    #print(global_step)
+                    self.lr_scheduler.step(global_step)
 
-            self._inner_iter = i
+                self._inner_iter = i
 
-            self.call_hook("before_train_iter")
+                self.call_hook("before_train_iter")
 
-            # outputs = self.batch_processor(self.model,
-            #                                data_batch,
-            #                                train_mode=True,
-            #                                **kwargs)
-            outputs = self.batch_processor_inline(
-                self.model, data_batch, train_mode=True, **kwargs
-            )
+                # outputs = self.batch_processor(self.model,
+                #                                data_batch,
+                #                                train_mode=True,
+                #                                **kwargs)
 
-            if not isinstance(outputs, dict):
-                raise TypeError("batch_processor() must return a dict")
-            if "log_vars" in outputs:
-                self.log_buffer.update(outputs["log_vars"], outputs["num_samples"])
+                outputs = self.batch_processor_inline(
+                    self.model, data_batch, train_mode=True, **kwargs
+                )
 
-            self.outputs = outputs
-            self.call_hook("after_train_iter")
-            # 有两个after_train_iter, 这里调用的是哪一个呢？
-            # add by lijiale for computing the backward time.
-            self.call_hook("after_grad_bp")             
-            self._iter += 1
+                if not isinstance(outputs, dict):
+                    raise TypeError("batch_processor() must return a dict")
+                if t == 1 and "log_vars" in outputs:
+                    self.log_buffer.update(outputs["log_vars"], outputs["num_samples"])
+
+                self.outputs = outputs
+
+                if t == 1:
+                    self.call_hook("after_train_iter")
+                    # 有两个after_train_iter, 这里调用的是哪一个呢？
+                    # add by lijiale for computing the backward time.
+                    self.call_hook("after_grad_bp")             
+                self._iter += 1
 
         self.call_hook("after_train_epoch")
         self._epoch += 1

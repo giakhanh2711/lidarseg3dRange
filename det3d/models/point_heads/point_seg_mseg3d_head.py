@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from torchvision import ops
 
 from functools import partial
 
@@ -15,6 +16,58 @@ from .context_module import LiDARSemanticFeatureAggregationModule, SemanticFeatu
 
 from OpenPCSeg.pcseg.model.segmentor.fusion.rpvnet.rpvnet import range_to_point
 
+class PDBatchNorm(torch.nn.Module):
+    def __init__(
+        self,
+        num_features,
+        context_channels=256,
+        eps=1e-3,
+        momentum=0.01,
+        conditions=("ScanNet", "S3DIS", "Structured3D"),
+        decouple=True,
+        adaptive=False,
+        affine=True,
+    ):
+        super().__init__()
+        self.conditions = conditions
+        self.decouple = decouple
+        self.adaptive = adaptive
+        self.affine = affine
+        if self.decouple:
+            self.bns = nn.ModuleList(
+                [
+                    nn.BatchNorm1d(
+                        num_features=num_features,
+                        eps=eps,
+                        momentum=momentum,
+                        affine=affine,
+                    )
+                    for _ in conditions
+                ]
+            )
+        else:
+            self.bn = nn.BatchNorm1d(
+                num_features=num_features, eps=eps, momentum=momentum, affine=affine
+            )
+        if self.adaptive:
+            self.modulation = nn.Sequential(
+                nn.SiLU(), nn.Linear(context_channels, 2 * num_features, bias=True)
+            )
+
+    def forward(self, feat, condition=None, context=None):
+        if self.decouple:
+            assert condition in self.conditions
+            bn = self.bns[self.conditions.index(condition)]
+        else:
+            bn = self.bn
+        feat = bn(feat)
+        if self.adaptive:
+            assert context is not None
+            shift, scale = self.modulation(context).chunk(2, dim=1)
+            feat = feat * (1.0 + scale) + shift
+        return feat
+
+
 
 @POINT_HEADS.register_module
 class PointSegMSeg3DHead(nn.Module):
@@ -26,7 +79,17 @@ class PointSegMSeg3DHead(nn.Module):
         else:
             self.num_class = num_class
         
-        norm_layer=partial(nn.BatchNorm1d, eps=1e-6)
+        norm_layer=partial(
+            PDBatchNorm,
+            eps=1e-3,
+            momentum=0.01,
+            conditions=kwargs.get(conditions, None),
+            context_channels=kwargs.get(context_channels, None),
+            decouple=kwargs.get(norm_decouple, None),
+            adaptive=kwargs.get(norm_adaptive, None),
+            affine=kwargs.get(norm_affine, None),
+        )
+        
         act_layer=nn.ReLU
 
 
@@ -76,19 +139,6 @@ class PointSegMSeg3DHead(nn.Module):
             act_layer(),
         ) 
 
-
-        # TODO: KHANH ADD module to learn to mimic to complete point wise range features.
-        # self.lidar_range_mimic_layer = self.make_convcls_head(
-        #     fc_cfg=model_cfg["MIMIC_FC"],
-        #     input_channels=voxel_align_channels,
-        #     output_channels=range_align_channels,
-        #     dp_ratio=0
-        # )
-        
-        # KHANH ADD
-
-
-
         # cross-modal feature completion
         self.lidar_camera_mimic_layer = self.make_convcls_head(
             fc_cfg=model_cfg["MIMIC_FC"],
@@ -135,6 +185,27 @@ class PointSegMSeg3DHead(nn.Module):
         self.cosine_similarity = nn.CosineEmbeddingLoss()
         self.tasks = ["out"]
 
+        self.image_features_total = []
+
+        self.f_v_total_branch = nn.Sequential(
+            nn.AvgPool2d(3, 3),
+            ops.MLP(in_channels=10,
+                    hidden_channels=2,
+                    norm_layer=norm_layer,
+                    activation_layer=act_layer),      
+        )
+
+        self.mlp_final = ops.MLP(
+            in_channels=10,
+            hidden_channels=2,
+            norm_layer=norm_layer,
+            activation_layer=act_layer
+        )
+
+    def f_vf(self):
+        self.image_features_total = torch.cat(self.image_features_total, dim=0).view(-1, self.num_cams, self.num_chs, self.ho, self.wo)
+        f_m = self.f_v_total_branch(self.image_features_total) * nn.Softmax(self.f_v_total_branch(self.image_features_total))
+        return self.mlp_final(nn.Sigmoid(f_m)*self.image_features_total + self.image_features_total)
 
     def make_convcls_head(self, fc_cfg, input_channels, output_channels, dp_ratio=0):
         fc_layers = []
@@ -213,18 +284,6 @@ class PointSegMSeg3DHead(nn.Module):
         loss_cma = self.forward_ret_dict['loss_cma']
         point_loss += loss_cma
         point_loss_dict['loss_cma'] = loss_cma.detach()
-        
-        # mimic loss for feature completion range
-        # point_features_prange = self.forward_ret_dict["point_features_prange"]
-        # point_features_range = self.forward_ret_dict["point_features_range"]
-        # assert self.forward_ret_dict["point_features_range"].requires_grad == False
-        # out_mimic_loss_range = self.mimic_loss_func(
-        #     self.forward_ret_dict["point_features_prange"],
-        #     self.forward_ret_dict["point_features_range"],
-        # )
-        # point_loss += out_mimic_loss_range
-        # point_loss_dict["out_mimic_loss_range"] = out_mimic_loss_range.detach()
-
 
         return point_loss, point_loss_dict
 
@@ -268,6 +327,13 @@ class PointSegMSeg3DHead(nn.Module):
 
         return point_features_camera
 
+    def reset_image_features_total(self):
+        self.image_features_total = []
+
+
+    def solve_image_features_total(self):
+        
+        self.f_v_total = torch.cat(self.image_features_total, dim=0)
 
 
     def forward(self, batch_dict, return_loss=True, **kwargs):
@@ -317,6 +383,9 @@ class PointSegMSeg3DHead(nn.Module):
 
         # image feature maps -> point camera features
         image_features = batch_dict["image_features"]
+        self.batch_size, self.num_cams, self.num_chs, self.ho, self.wo = image_features.shape
+        self.image_features_total.append(deepcopy(image_features).view(-1, self.ho, self.wo))
+
         points_cuv = batch_dict["points_cuv"]
         valid_mask = (points_cuv[:, 0] == 1)
         # print('valid mask:', valid_mask[:4])

@@ -27,19 +27,6 @@ class SegMSeg3DNet(SingleStageDetector):
             reader, backbone, neck, bbox_head, train_cfg, test_cfg, pretrained=None
         )
         
-        # TODO: IMAGE BACKBONE -> SAM
-#         sam_checkpoint = '/home/nnthao02/Linh_Khanh/lidarseg3dSamPT/sam_vit_h_4b8939.pth'
-#         model_type = 'vit_h'
-        
-#         device = 'cuda'
-
-#         sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
-#         sam.to(device=device)
-#         sam.eval()
-#         self.mask_generator = SamAutomaticMaskGenerator(sam)
-#         self.img_backbone = self.mask_generator.predictor
-        # KHANH ADD
-        
         self.img_backbone = builder.build_img_backbone(img_backbone)
         self.img_head = builder.build_img_head(img_head)
         self.point_head = builder.build_point_head(point_head)
@@ -54,6 +41,11 @@ class SegMSeg3DNet(SingleStageDetector):
         # KHANH ADD
         
 
+    def reset_model_point(self):
+        self.point_head.reset_image_features_total()
+
+    def calculate_image_features_total(self):
+        self.point_head.solve_image_features_total()
 
     def init_weights(self, pretrained=None):
         if pretrained is None:
@@ -102,20 +94,6 @@ class SegMSeg3DNet(SingleStageDetector):
             batch_size=batch_size,
         )
 
-        # TODO: KHANH COMMENT
-#         image_features_a = []
-        
-#         with torch.no_grad():
-#             for i in range(images.shape[0]):
-#                 self.img_backbone.set_image(images[i])
-#                 image_features_a.append(self.img_backbone.get_image_embedding())
-            
-#         image_features = torch.cat(image_features_a, dim=0).unsqueeze(0)
-
-#         img_data = dict(
-#             inputs = image_features,
-#             batch_size = batch_size
-#         )
 
         if return_loss:
             images_sem_labels = example["images_sem_labels"]
@@ -126,10 +104,6 @@ class SegMSeg3DNet(SingleStageDetector):
         # get image_features from the img_head
         image_features = img_data["image_features"]
         _, num_chs, ho, wo = image_features.shape
-
-        # # TODO: KHANH ADD
-        # if self.tta is not None:
-        #     image_features = torch.repeat_interleave(image_features, repeats=self.tta, dim=0)
             
         # KHANH ADD
         #print(f'image_features shape: {image_features.shape}, {batch_size}') # torch.Size([24, 48, 160, 240]), 4
@@ -161,13 +135,6 @@ class SegMSeg3DNet(SingleStageDetector):
             }
 
         range_features = self.range_backbone(range_data_input)['range features']
-
-        # # TODO: KHANH ADD
-        # if self.tta is not None:
-        #     range_features = torch.repeat_interleave(range_features, repeats=self.tta, dim=0)
-        # # KHANH ADD
-        
-        # KHANH ADD
 
 
         # lidar branch
@@ -228,7 +195,11 @@ class SegMSeg3DNet(SingleStageDetector):
                 repeat_list = [v for i in range(len(opt_loss))]
                 seg_loss_dict[k] = repeat_list
 
-            return seg_loss_dict
+            forward_ret_dict = {
+                'image_features': image_features
+            }
+
+            return seg_loss_dict, forward_ret_dict
 
         else:
             return self.point_head.predict(example=example, test_cfg=self.test_cfg)
