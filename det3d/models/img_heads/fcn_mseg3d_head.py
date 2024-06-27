@@ -177,26 +177,9 @@ class FCNMSeg3DHead(BaseDecodeHead):
         inputs = batch_dict["inputs"] # a list
         
         feature = self._forward_feature(inputs)
-        output = self.cls_seg(feature)
-
-        # gather camera semantic embeddings
-        camera_semantic_embeddings = self.camera_sfam(feature, output, batch_dict["batch_size"])
-        #print('output shape:', output.shape)
-
-        self.forward_ret_dict.update({
-            "image_logits": output
-        })
-
-        if return_loss:
-            self.forward_ret_dict.update({
-                "image_sem_labels": batch_dict["images_sem_labels"],
-            })   
 
 
-        batch_dict["image_logits"] = output
         batch_dict["image_features"] = feature
-
-        batch_dict["camera_semantic_embeddings"] = camera_semantic_embeddings
 
         return batch_dict
 

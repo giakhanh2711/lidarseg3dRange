@@ -6,12 +6,10 @@
 
 from .fcn_head import FCNHead
 from .fcn_mseg3d_head import FCNMSeg3DHead
-from .no_classify_fcn.py import NoClassifyFCN
 
 
 
 __all__ = [
     "FCNHead",
     "FCNMSeg3DHead",
-    "NoClassifyFCN"
 ]
