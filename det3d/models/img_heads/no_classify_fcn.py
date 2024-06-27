@@ -35,16 +35,22 @@ class NoClassifyFCN(nn.Module):
                  loss_weight=1.0,
                  lovasz_loss_weight=-1.0,
                  use_sc_conv=False,
+                 in_index,
+                 channels,
+                 in_channels
                  **kwargs):
         print('NoClassifyFCN created!')
         assert num_convs >= 0 and dilation > 0 and isinstance(dilation, int)
         self.num_convs = num_convs
         self.concat_input = concat_input
         self.kernel_size = kernel_size
-        super(NoClassifyFCN, self).__init__(**kwargs)
+        super(NoClassifyFCN, self).__init__()
+        self.in_channels = in_channels
+        self.channels = channels
         if num_convs == 0:
             assert self.in_channels == self.channels
-
+      
+        self.in_index = in_index
         conv_padding = (kernel_size // 2) * dilation
         convs = []
         convs.append(
