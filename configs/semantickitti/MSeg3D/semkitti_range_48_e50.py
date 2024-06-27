@@ -31,8 +31,6 @@ hrnet_w48.update(hrnet_w48_cfg)
 
 fcn_head_cfg = dict(
     type="NoClassifyFCN",
-    num_classes=num_class,
-    ignore_index=ignore_class,
     in_index=(0, 1, 2, 3), 
     in_channels=[48, 96, 192, 384], # hrnetw48 
     #in_channels=[18, 36, 72, 144],    # hrnetw18 
