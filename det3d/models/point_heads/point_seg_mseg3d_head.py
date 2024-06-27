@@ -77,18 +77,6 @@ class PointSegMSeg3DHead(nn.Module):
         ) 
 
 
-        # TODO: KHANH ADD module to learn to mimic to complete point wise range features.
-        # self.lidar_range_mimic_layer = self.make_convcls_head(
-        #     fc_cfg=model_cfg["MIMIC_FC"],
-        #     input_channels=voxel_align_channels,
-        #     output_channels=range_align_channels,
-        #     dp_ratio=0
-        # )
-        
-        # KHANH ADD
-
-
-
         # cross-modal feature completion
         self.lidar_camera_mimic_layer = self.make_convcls_head(
             fc_cfg=model_cfg["MIMIC_FC"],
@@ -97,30 +85,8 @@ class PointSegMSeg3DHead(nn.Module):
             dp_ratio=0,
         )
 
-        # SF-Phase: semantic-based feature fusion phase
-        SFPhase_CFG = model_cfg["SFPhase_CFG"]
-        self.lidar_sfam = LiDARSemanticFeatureAggregationModule()
-        self.sffm = SemanticFeatureFusionModule(
-            d_input_point=fused_channels, 
-            d_input_embeddings1=image_in_channels, 
-            d_input_embeddings2=voxel_in_channels, 
-            embeddings_proj_kernel_size=SFPhase_CFG["embeddings_proj_kernel_size"], 
-            d_model=SFPhase_CFG["d_model"], 
-            nhead=SFPhase_CFG["n_head"], 
-            num_decoder_layers=SFPhase_CFG["n_layer"], 
-            dim_feedforward=SFPhase_CFG["n_ffn"],
-            dropout=SFPhase_CFG["drop_ratio"],
-            activation=SFPhase_CFG["activation"], 
-            normalize_before=SFPhase_CFG["pre_norm"],
-        )
-
-
-
-
-
         # final output head for point-wise segmentation
-        sem_fused_channels = self.sffm.d_model
-        self.out_cls_layers = nn.Linear(sem_fused_channels, num_class)
+        self.out_cls_layers = nn.Linear(fused_channels, num_class)
 
 
 
@@ -207,18 +173,6 @@ class PointSegMSeg3DHead(nn.Module):
         )
         point_loss += out_mimic_loss
         point_loss_dict["out_mimic_loss"] = out_mimic_loss.detach()
-
-        # mimic loss for feature completion range
-        # point_features_prange = self.forward_ret_dict["point_features_prange"]
-        # point_features_range = self.forward_ret_dict["point_features_range"]
-        # assert self.forward_ret_dict["point_features_range"].requires_grad == False
-        # out_mimic_loss_range = self.mimic_loss_func(
-        #     self.forward_ret_dict["point_features_prange"],
-        #     self.forward_ret_dict["point_features_range"],
-        # )
-        # point_loss += out_mimic_loss_range
-        # point_loss_dict["out_mimic_loss_range"] = out_mimic_loss_range.detach()
-
 
         return point_loss, point_loss_dict
 
@@ -392,33 +346,8 @@ class PointSegMSeg3DHead(nn.Module):
         point_features_lc = torch.cat([point_features_lidar, point_features_ccamera, point_features_range], dim=1)
         point_features_geo_fused = self.gffm_lc(point_features_lc)
         # KHANH ADD
-
-
-
-        # SF-Phase
-        # camera_semantic_embeddings: [batch, C_img, num_cls, 1]
-        camera_semantic_embeddings = batch_dict["camera_semantic_embeddings"]
-        # lidar_semantic_embeddings: [batch, C_voxel, num_cls, 1]
-        lidar_semantic_embeddings = self.lidar_sfam(
-            feats=voxel_features, 
-            probs=voxel_logits, 
-            batch_idx=voxel_coords[:, 0], 
-            batch_size=batch_size,
-        )
-        # sffm
-        point_features_sem_fused = self.sffm(
-            input_point_features=point_features_geo_fused, 
-            input_sem_embeddings1=camera_semantic_embeddings, 
-            input_sem_embeddings2=lidar_semantic_embeddings, 
-            batch_idx=point_coords[:, 0], 
-            batch_size=batch_size,
-        )
-
-
-
-
-        
-        out_logits = self.out_cls_layers(point_features_sem_fused)
+   
+        out_logits = self.out_cls_layers(point_features_geo_fused)
 
         batch_dict["out_logits"] = out_logits
         self.forward_ret_dict["out_logits"] = out_logits

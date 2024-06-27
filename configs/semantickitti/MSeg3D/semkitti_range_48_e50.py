@@ -23,15 +23,14 @@ im_height, img_width = 360, 1280
 
 
 hrnet_w48_cfg = dict(
-    pretrained='./work_dirs/pretrained_models/hrnetv2_w48-d2186c55.pth',
+    pretrained='../lidarseg3dRange/work_dirs/pretrained_models/hrnetv2_w48-d2186c55.pth',
     frozen_stages=3, 
     norm_eval=False, 
 )
 hrnet_w48.update(hrnet_w48_cfg)
 
-
 fcn_head_cfg = dict(
-    type="FCNMSeg3DHead",
+    type="NoClassifyFCN",
     num_classes=num_class,
     ignore_index=ignore_class,
     in_index=(0, 1, 2, 3), 
@@ -42,8 +41,6 @@ fcn_head_cfg = dict(
     loss_weight=0.5, 
 )
 fcn_head.update(fcn_head_cfg)
-
-
 
 
 # training and testing settings
@@ -60,8 +57,8 @@ model = dict(
 
     # img branch
     img_backbone = hrnet_w48 if use_img else None,
-    img_head = fcn_head if use_img else None,   
-
+    img_head = fcn_head_cfg if use_img else None,
+    
     # KHANH ADD
     range_backbone = dict(
         NAME= 'CENet',
@@ -119,17 +116,6 @@ model = dict(
             DP_RATIO=0.25,
 
             MIMIC_FC=[64, 64],
-
-            SFPhase_CFG=dict(
-                embeddings_proj_kernel_size=1, 
-                d_model=96,
-                n_head=4,
-                n_layer=6,
-                n_ffn=192,
-                drop_ratio=0,
-                activation="relu",
-                pre_norm=False,
-            ),
         )
     )
 )

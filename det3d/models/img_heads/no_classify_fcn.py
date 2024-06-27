@@ -11,51 +11,8 @@ from .sc_conv import SCBottleneck
 
 from det3d.core.utils.loss_utils import lovasz_softmax
 
-
-
-
-class CameraSemanticFeatureAggregationModule(nn.Module):
-    """
-    Aggregate the semantic embeddings across all the multi-camera images
-    """
-    def __init__(self):
-        super(CameraSemanticFeatureAggregationModule, self).__init__()
-
-    def forward(self, _feats, _probs, batch_size):
-        """
-        _feats: [batch_size*num_cams, c, h, w]
-        _probs: [batch_size*num_cams, num_cls, h, w]
-        
-        semantic_embeddings: [batch_size, c, num_cls, 1]
-        """
-        _, num_classes, height, width = _probs.size()
-        channels = _feats.size(1)
-
-        #print('_probs size:', _probs.shape)
-        # [batch_size, num_cams, c, h, w] -> [batch_size, c, num_cams, h, w]
-        probs = _probs.view(batch_size, -1, num_classes, height, width).permute(0,2,1,3,4).contiguous()
-        #print('_feat shape:', _feats.shape)
-        feats = _feats.view(batch_size, -1, channels, height, width).permute(0,2,1,3,4).contiguous()
-        #print('feats shape:', feats.shape)
-        # print("==> probs.shape: ", probs.shape)
-
-        probs = probs.view(batch_size, num_classes, -1)
-        feats = feats.view(batch_size, channels, -1)
-        # [batch_size, height*width, channels]
-        feats = feats.permute(0, 2, 1)
-        # [batch_size, num_classes, height*width]
-        probs = F.softmax(probs, dim=2)
-        # [batch_size, num_classes, channels]
-        semantic_embeddings = torch.matmul(probs, feats)
-
-        # [batch_size, channels, num_classes, 1]
-        semantic_embeddings = semantic_embeddings.permute(0, 2, 1).contiguous().unsqueeze(3)
-        
-        return semantic_embeddings
-
-
 @IMG_HEADS.register_module
-class FCNMSeg3DHead(BaseDecodeHead):
+class NoClassifyFCN(nn.Module):
     """
     Based on Fully Convolution Networks for Semantic Segmentation.
     This head is implemented of `FCNNet <https://arxiv.org/abs/1411.4038>`_.
@@ -79,8 +36,7 @@ class FCNMSeg3DHead(BaseDecodeHead):
                  lovasz_loss_weight=-1.0,
                  use_sc_conv=False,
                  **kwargs):
-        
-        print('FCNMSeg3DHead created!')
+        print('NoClassifyFCN created!')
         assert num_convs >= 0 and dilation > 0 and isinstance(dilation, int)
         self.num_convs = num_convs
         self.concat_input = concat_input
@@ -153,7 +109,35 @@ class FCNMSeg3DHead(BaseDecodeHead):
         self.lovasz_loss_weight = lovasz_loss_weight
         if self.lovasz_loss_weight > 0:
             self.lovasz_loss_func = lovasz_softmax
+    
+    def _transform_inputs(self, inputs):
+        """Transform inputs for decoder.
 
+        Args:
+            inputs (list[Tensor]): List of multi-level img features.
+
+        Returns:
+            Tensor: The transformed inputs
+        """
+
+        if self.input_transform == 'resize_concat':
+            inputs = [inputs[i] for i in self.in_index]
+            upsampled_inputs = [
+                resize(
+                    input=x,
+                    size=inputs[0].shape[2:],
+                    mode='bilinear',
+                    align_corners=self.align_corners) for x in inputs
+            ]
+            
+            inputs = torch.cat(upsampled_inputs, dim=1)
+            
+        elif self.input_transform == 'multiple_select':
+            inputs = [inputs[i] for i in self.in_index]
+        else:
+            inputs = inputs[self.in_index]
+
+        return inputs
 
     def _forward_feature(self, inputs):
         """Forward function for feature maps before classifying each pixel with
@@ -177,26 +161,9 @@ class FCNMSeg3DHead(BaseDecodeHead):
         inputs = batch_dict["inputs"] # a list
         
         feature = self._forward_feature(inputs)
-        output = self.cls_seg(feature)
 
-        # gather camera semantic embeddings
-        camera_semantic_embeddings = self.camera_sfam(feature, output, batch_dict["batch_size"])
-        #print('output shape:', output.shape)
-
-        self.forward_ret_dict.update({
-            "image_logits": output
-        })
-
-        if return_loss:
-            self.forward_ret_dict.update({
-                "image_sem_labels": batch_dict["images_sem_labels"],
-            })   
-
-
-        batch_dict["image_logits"] = output
         batch_dict["image_features"] = feature
 
-        batch_dict["camera_semantic_embeddings"] = camera_semantic_embeddings
 
         return batch_dict
 

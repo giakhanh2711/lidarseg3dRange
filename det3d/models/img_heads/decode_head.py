@@ -149,8 +149,6 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
         """
 
         if self.input_transform == 'resize_concat':
-            #print('in_index:', self.in_index)
-            # TODO: KHANH COMMENT for SAM because only one feature map for one image
             inputs = [inputs[i] for i in self.in_index]
             upsampled_inputs = [
                 resize(
@@ -159,8 +157,6 @@ class BaseDecodeHead(BaseModule, metaclass=ABCMeta):
                     mode='bilinear',
                     align_corners=self.align_corners) for x in inputs
             ]
-            #upsampled_inputs = [x for x in inputs]
-            # KHANH COMMENT and add above
             
             inputs = torch.cat(upsampled_inputs, dim=1)
             

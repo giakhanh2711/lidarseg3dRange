@@ -27,19 +27,6 @@ class SegMSeg3DNet(SingleStageDetector):
             reader, backbone, neck, bbox_head, train_cfg, test_cfg, pretrained=None
         )
         
-        # TODO: IMAGE BACKBONE -> SAM
-#         sam_checkpoint = '/home/nnthao02/Linh_Khanh/lidarseg3dSamPT/sam_vit_h_4b8939.pth'
-#         model_type = 'vit_h'
-        
-#         device = 'cuda'
-
-#         sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
-#         sam.to(device=device)
-#         sam.eval()
-#         self.mask_generator = SamAutomaticMaskGenerator(sam)
-#         self.img_backbone = self.mask_generator.predictor
-        # KHANH ADD
-        
         self.img_backbone = builder.build_img_backbone(img_backbone)
         self.img_head = builder.build_img_head(img_head)
         self.point_head = builder.build_point_head(point_head)
@@ -49,8 +36,6 @@ class SegMSeg3DNet(SingleStageDetector):
             model_cfgs=range_backbone,
             num_class=range_backbone['NUM_CLASS'],
         )
-        self.batchsize=kwargs.get('batchsize')
-        self.tta = kwargs.get('tta')
         # KHANH ADD
         
 
@@ -127,10 +112,7 @@ class SegMSeg3DNet(SingleStageDetector):
         image_features = img_data["image_features"]
         _, num_chs, ho, wo = image_features.shape
 
-        # # TODO: KHANH ADD
-        # if self.tta is not None:
-        #     image_features = torch.repeat_interleave(image_features, repeats=self.tta, dim=0)
-            
+        
         # KHANH ADD
         #print(f'image_features shape: {image_features.shape}, {batch_size}') # torch.Size([24, 48, 160, 240]), 4
         image_features = image_features.view(batch_size, num_cams, num_chs, ho, wo)
@@ -148,11 +130,6 @@ class SegMSeg3DNet(SingleStageDetector):
             rxy = range_data[i]['range_pxpy']
     
             rxy = torch.from_numpy(rxy.astype(np.float32)).to('cuda')
-
-            # # TODO: KHANH ADD
-            # if self.tta is not None:
-            #     rxy = rxy.repeat(self.tta, *rxy.shape[1:])
-            # # KHANH ADD
             
             range_pxpy.append(rxy)
 
@@ -161,11 +138,6 @@ class SegMSeg3DNet(SingleStageDetector):
             }
 
         range_features = self.range_backbone(range_data_input)['range features']
-
-        # # TODO: KHANH ADD
-        # if self.tta is not None:
-        #     range_features = torch.repeat_interleave(range_features, repeats=self.tta, dim=0)
-        # # KHANH ADD
         
         # KHANH ADD
 
@@ -199,7 +171,6 @@ class SegMSeg3DNet(SingleStageDetector):
         # print(f'data["points_cuv"] shape: {data["points_cuv"].shape}') # torch.Size([138880, 4])
         # print(f'example["points_cp"]: {example["points_cp"].shape}') # torch.Size([138880, 3])
         data["image_features"] = image_features
-        data["camera_semantic_embeddings"] = img_data.get("camera_semantic_embeddings", None)
         data["metadata"] = example.get("metadata", None)
 
         # TODO: KHANH ADD stores data before passing to PointSegMSeg3DHead class
@@ -209,14 +180,9 @@ class SegMSeg3DNet(SingleStageDetector):
 
         data = self.point_head(batch_dict=data, return_loss=return_loss)
 
-
         if return_loss:
             seg_loss_dict = {}
             point_loss, point_loss_dict = self.point_head.get_loss()
-
-            # compute the img head loss
-            img_loss, point_loss_dict = self.img_head.get_loss(point_loss_dict)
-
 
             # this item for Optimizer, formating as loss per task
             total_loss = point_loss + img_loss
