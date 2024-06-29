@@ -76,19 +76,6 @@ class PointSegMSeg3DHead(nn.Module):
             act_layer(),
         ) 
 
-
-        # TODO: KHANH ADD module to learn to mimic to complete point wise range features.
-        # self.lidar_range_mimic_layer = self.make_convcls_head(
-        #     fc_cfg=model_cfg["MIMIC_FC"],
-        #     input_channels=voxel_align_channels,
-        #     output_channels=range_align_channels,
-        #     dp_ratio=0
-        # )
-        
-        # KHANH ADD
-
-
-
         # cross-modal feature completion
         self.lidar_camera_mimic_layer = self.make_convcls_head(
             fc_cfg=model_cfg["MIMIC_FC"],
@@ -115,12 +102,19 @@ class PointSegMSeg3DHead(nn.Module):
         )
 
 
-
-
-
         # final output head for point-wise segmentation
         sem_fused_channels = self.sffm.d_model
         self.out_cls_layers = nn.Linear(sem_fused_channels, num_class)
+
+        # 2dpass - Add 2DLearners
+        hidden_size = fused_channels
+        self.leaners = nn.Sequential(nn.Linear(hidden_size, hidden_size))
+        self.fcs1 = nn.Sequential(nn.Linear(hidden_size * 2, hidden_size))
+        self.fcs2 = nn.Sequential(nn.Linear(hidden_size, hidden_size))
+
+        self.multihead_fuse_classifier = nn.Sequential(nn.Linear(hidden_size, 128),
+                                                       nn.ReLU(True),
+                                                       nn.Linear(128, num_class))
 
 
 
@@ -326,6 +320,19 @@ class PointSegMSeg3DHead(nn.Module):
         point_features_camera = self.gffm_camera(point_features_camera_0)
 
         #print('point_features_camera before shape: ', point_features_camera.size())
+        
+        # 2dpass - modality fusion
+        feat_learner = F.relu(self.leaners(point_features_lidar[valid_mask]))
+        feat_cat = torch.cat([point_features_camera, feat_learner], 1)
+        feat_cat = self.fcs1(feat_cat)
+        feat_weight = torch.sigmoid(self.fcs2(feat_cat))
+        fuse_feat = F.relu(feat_cat * feat_weight) # F2d fused with 3D
+
+        # 2dpass - fusion prediction
+        fuse_pred = self.multihead_fuse_classifier(fuse_feat)
+
+
+
 
 
         # cross-modal feature completion
