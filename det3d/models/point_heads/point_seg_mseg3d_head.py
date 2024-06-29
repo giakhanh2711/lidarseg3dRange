@@ -112,11 +112,13 @@ class PointSegMSeg3DHead(nn.Module):
         self.fcs1 = nn.Sequential(nn.Linear(hidden_size * 2, hidden_size))
         self.fcs2 = nn.Sequential(nn.Linear(hidden_size, hidden_size))
 
-        self.multihead_fuse_classifier = nn.Sequential(nn.Linear(hidden_size, 128),
+        self.head_fuse_classifier = nn.Sequential(nn.Linear(hidden_size, 128),
                                                        nn.ReLU(True),
                                                        nn.Linear(128, num_class))
 
-
+        self.head_3d_classifier = nn.Sequential(nn.Linear(hidden_size, 128),
+                                                     nn.ReLU(True),
+                                                     nn.Linear(128, num_class))
 
 
         # build loss
@@ -187,6 +189,22 @@ class PointSegMSeg3DHead(nn.Module):
         )
         out_loss = out_ce_loss + out_lvsz_loss
         point_loss += out_loss
+
+        # 2dpass fused 2d loss
+        valid_mask = self.forward_ret_dict['valid_mask']
+        out_ce_loss_2d = self.cross_entropy_func(
+            self.forward_ret_dict["fused_pred_2d"],
+            self.forward_ret_dict["point_sem_labels"][valid_mask].long(),
+        )
+        out_lvsz_loss_2d = self.lovasz_softmax_func(
+            F.softmax(self.forward_ret_dict["fused_pred_2d"], dim=-1),
+            self.forward_ret_dict["point_sem_labels"][valid_mask].long(),
+            ignore=self.ignored_label, 
+        )
+
+        out_loss_2d = out_ce_loss_2d + out_lvsz_loss_2d
+        point_loss += out_loss_2d
+
         point_loss_dict["out_ce_loss"] = out_ce_loss.detach()
         point_loss_dict["out_lovasz_loss"] = out_lvsz_loss.detach()
 
@@ -202,17 +220,17 @@ class PointSegMSeg3DHead(nn.Module):
         point_loss += out_mimic_loss
         point_loss_dict["out_mimic_loss"] = out_mimic_loss.detach()
 
-        # mimic loss for feature completion range
-        # point_features_prange = self.forward_ret_dict["point_features_prange"]
-        # point_features_range = self.forward_ret_dict["point_features_range"]
-        # assert self.forward_ret_dict["point_features_range"].requires_grad == False
-        # out_mimic_loss_range = self.mimic_loss_func(
-        #     self.forward_ret_dict["point_features_prange"],
-        #     self.forward_ret_dict["point_features_range"],
-        # )
-        # point_loss += out_mimic_loss_range
-        # point_loss_dict["out_mimic_loss_range"] = out_mimic_loss_range.detach()
+        # 2dpass - KL divergence
+        xm_loss = F.kl_div(
+            F.log_softmax(self.forward_ret_dict['pred_3d'], dim=1),
+            F.softmax(self.forward_ret_dict['fused_pred_2d'], dim=1),
+        )
 
+        point_loss += 0.05 * xm_loss
+        point_loss_dict['xm_loss'] = xm_loss.detach() * 0.05
+
+        point_loss_dict["out_ce_loss_2d"] = out_ce_loss_2d.detach()
+        point_loss_dict["out_lovasz_loss_2d"] = out_lvsz_loss_2d.detach()
 
         return point_loss, point_loss_dict
 
@@ -329,9 +347,16 @@ class PointSegMSeg3DHead(nn.Module):
         fuse_feat = F.relu(feat_cat * feat_weight) # F2d fused with 3D
 
         # 2dpass - fusion prediction
-        fuse_pred = self.multihead_fuse_classifier(fuse_feat)
+        fuse_pred = self.head_fuse_classifier(fuse_feat)
 
+        enhanced_3d = feat_learner + point_features_lidar[valid_mask]
+        pred_3d = self.head_3d_classifier(enhanced_3d)
 
+        if return_loss:
+            self.forward_ret_dict.update({
+                "fused_pred_2d": fuse_pred,
+                "pred_3d": pred_3d
+            })
 
 
 
@@ -343,6 +368,7 @@ class PointSegMSeg3DHead(nn.Module):
         if return_loss:
             # NOTE: compute the feature completion loss on points inside only
             self.forward_ret_dict.update({
+                "valid_mask": valid_mask,
                 "point_features_pcamera": point_features_pcamera,
                 "point_features_camera": point_features_camera.detach(),
             })
