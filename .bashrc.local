@@ -1,0 +1,12 @@
+# Basic installation
+export PYTHONPATH="${PYTHONPATH}:/home/nnthao02/Linh_Khanh/2dpass"
+
+# nuScenes dev-kit
+export PYTHONPATH="${PYTHONPATH}:/home/nnthao02/Linh_Khanh/2dpass/nuscenes-devkit/python-sdk"
+
+# Cuda Extentions
+export PATH=/usr/local/cuda/bin:$PATH
+export CUDA_PATH=/usr/local/cuda
+export CUDA_HOME=/usr/local/cuda
+export CUDNN_INCLUDE_PATH=/usr/local/cuda/include
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
