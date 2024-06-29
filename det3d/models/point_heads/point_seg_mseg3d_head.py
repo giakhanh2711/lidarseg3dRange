@@ -525,12 +525,15 @@ class PointSegMSeg3DHead(nn.Module):
                     ret = {}
                     ret["metadata"] = meta_list[i]
 
-                    cur_bs_mask = (stack_points[:, 0] == i)
+                    cur_bs_mask = (stack_points[self.valid_mask][:, 0] == i)
                     ret["pred_point_sem_labels"] = stack_pred_sem_labels[cur_bs_mask]
 
                     if "point_sem_labels" in example:
                         # not used
-                        ret["point_sem_labels"] = example["point_sem_labels"][cur_bs_mask]
+                        if self.miou1 == True:
+                            ret["point_sem_labels"] = example["point_sem_labels"][self.valid_mask][left_ind:right_ind]
+                        else:
+                            ret["point_sem_labels"] = example["point_sem_labels"][cur_bs_mask]
                         # ret["voxel_sem_labels"] = example["voxel_sem_labels"][cur_bs_mask]
 
                     ret_list.append(ret)
