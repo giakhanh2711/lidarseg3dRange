@@ -207,7 +207,7 @@ class SegMSeg3DNet(SingleStageDetector):
         data['range_pxpy'] = range_pxpy
         # KHANH ADD
 
-        data = self.point_head(batch_dict=data, return_loss=return_loss)
+        data = self.point_head(batch_dict=data, return_loss=return_loss, miou1=kwargs['miou1'])
 
 
         if return_loss:

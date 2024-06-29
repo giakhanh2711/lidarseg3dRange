@@ -68,7 +68,8 @@ def parse_args():
     parser.add_argument("--local_rank", type=int, default=0)
     parser.add_argument("--testset", action="store_true")
     parser.add_argument('--tcp_port', type=int, default=17888, help='tcp port for distrbuted training')
-
+    parser.add_argument('--miou1', action='store_true')
+    
     args = parser.parse_args()
     if "LOCAL_RANK" not in os.environ:
         os.environ["LOCAL_RANK"] = str(args.local_rank)
@@ -127,7 +128,7 @@ def main():
 
     model = build_detector(cfg.model, train_cfg=None, test_cfg=cfg.test_cfg)
 
-    
+
     if args.testset:
         print("Use Test Set")
         dataset = build_dataset(cfg.data.test)
@@ -208,6 +209,7 @@ def main():
         with torch.no_grad():
             outputs = batch_processor(
                 model, data_batch, train_mode=False, local_rank=args.local_rank,
+                miou1 = arg.miou1
             )
 
         for output in outputs:

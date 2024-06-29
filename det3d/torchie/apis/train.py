@@ -103,6 +103,8 @@ def batch_processor(model, data, train_mode, **kwargs):
     else:
         device = None
 
+    miou1 = kwargs.get('miou1')
+
     # data = example_convert_to_torch(data, device=device)
     example = example_to_device(data, device, non_blocking=False)
 
@@ -117,7 +119,7 @@ def batch_processor(model, data, train_mode, **kwargs):
         )
         return outputs
     else:
-        return model(example, return_loss=False)
+        return model(example, return_loss=False, miou1=miou1)
 
 
 def batch_processor_time(model, data, train_mode, **kwargs):

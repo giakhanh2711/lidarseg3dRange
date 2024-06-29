@@ -277,6 +277,8 @@ class PointSegMSeg3DHead(nn.Module):
                 voxel_logits: (Nc1 + Nc2 + Nc3 + ..., n_cls)
                 out_logits: (Np1 + Np2 + Np3 + ..., n_cls)
         """
+        self.miou1 = kwargs.get('miou1')
+
         batch_size = batch_dict["batch_size"]
 
 
@@ -423,6 +425,10 @@ class PointSegMSeg3DHead(nn.Module):
         batch_dict["out_logits"] = out_logits
         self.forward_ret_dict["out_logits"] = out_logits
 
+        if self.miou1 == True:
+            self.forward_ret_dict["out_logits"] = self.forward_ret_dict["out_logits"][valid_mask]
+            self.valid_mask = valid_mask
+
         return batch_dict
 
 
@@ -497,7 +503,10 @@ class PointSegMSeg3DHead(nn.Module):
                     if "point_sem_labels" in example: 
                         # not used
                         right_ind = sum(merged_num_point_list[:i+1])
-                        ret["point_sem_labels"] = example["point_sem_labels"][left_ind:right_ind]
+                        if self.miou1 == True:
+                            ret["point_sem_labels"] = example["point_sem_labels"][self.valid_mask][left_ind:right_ind]
+                        else:
+                            ret["point_sem_labels"] = example["point_sem_labels"][left_ind:right_ind]
                         left_ind = right_ind
 
                     ret_list.append(ret)
